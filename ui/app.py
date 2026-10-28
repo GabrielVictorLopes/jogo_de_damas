@@ -17,17 +17,23 @@ class App:
         self.names = ["Jogador 1", "Jogador 2"]
         self.theme = 0  # índice em theme.BOARD_THEMES
         self.rules = RuleSet()
+        self.fade = 0.0
         self.show_menu()
 
+    def _switch(self, screen, fade: bool = True) -> None:
+        self.screen = screen
+        if fade:
+            self.fade = 1.0
+
     def show_menu(self) -> None:
-        self.screen = MenuScreen(self, self.names)
+        self._switch(MenuScreen(self, self.names))
 
     def start_game(self, n1: str, n2: str) -> None:
         self.names = [n1, n2]
-        self.screen = MatchScreen(self, Game(n1, n2, self.rules))
+        self._switch(MatchScreen(self, Game(n1, n2, self.rules)))
 
     def show_end(self, match) -> None:
-        self.screen = EndScreen(self, match)
+        self._switch(EndScreen(self, match), fade=False)
 
     def rematch(self) -> None:
         self.start_game(*self.names)
@@ -45,6 +51,12 @@ class App:
             self.screen.update(dt)
             T.background(self.surface)
             self.screen.draw(self.surface)
+            if self.fade > 0:
+                veil = pygame.Surface(self.surface.get_size())
+                veil.fill(T.BG_BOTTOM)
+                veil.set_alpha(int(255 * self.fade))
+                self.surface.blit(veil, (0, 0))
+                self.fade = max(0.0, self.fade - dt * 3.5)
             T.text(self.surface, f"{self.clock.get_fps():.0f} FPS", 12, T.MUTED,
                    bottomright=(self.surface.get_width() - 8, self.surface.get_height() - 6))
             pygame.display.flip()

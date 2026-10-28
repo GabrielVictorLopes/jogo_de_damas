@@ -77,7 +77,7 @@ class Rules:
                     if not long:
                         break
                     lr, lc = lr + dr, lc + dc
-            if not found and captured:
+            if captured and (not found or not rules.mandatory_capture):
                 results.append(Move(tuple(path), tuple(captured)))
 
         dfs((r0, c0), [(r0, c0)], [])

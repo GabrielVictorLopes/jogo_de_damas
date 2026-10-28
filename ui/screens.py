@@ -1,10 +1,11 @@
 """Telas: Menu, Partida e Fim de jogo."""
 import math
+import random
 import pygame
 from checkers.board import Color, Piece
 from checkers.game import Game
 from checkers.rules import RuleSet
-from .animation import MoveAnimation
+from .animation import MoveAnimation, Particles
 from .widgets import Button, TextInput, Toggle
 from . import theme as T
 
@@ -100,6 +101,8 @@ class MatchScreen:
         self.hover = None
         self.anim: MoveAnimation | None = None
         self.last = None
+        self.fx = Particles()
+        self.bursted: set = set()
         self.menu_btn = Button("Menu", app.show_menu, primary=False, size=17)
         self.theme_btn = Button("Tema", self._next_theme, primary=False, size=17)
 
@@ -140,14 +143,27 @@ class MatchScreen:
                 if moves:
                     piece = self.game.board.get(*self.selected)
                     self.anim = MoveAnimation(moves[0], piece)
+                    self.bursted = set()
                     self.selected = None
                     return
             self.selected = cell if self.game.moves_from(cell) else None
 
     def update(self, dt) -> None:
         self.game.tick(dt)
+        self.fx.update(dt)
+        if self.anim:
+            for sq in self.anim.move.captured:
+                if sq not in self.bursted and self.anim.passed(sq):
+                    self.bursted.add(sq)
+                    victim = self.game.board.get(*sq)
+                    col = T.P_LIGHT if victim.color is Color.LIGHT else (90, 90, 110)
+                    self.fx.burst(self.center_of(*sq), col, n=22, speed=self.cell * 3)
+                    self.fx.burst(self.center_of(*sq), T.DANGER, n=8, speed=self.cell * 2, size=3)
         if self.anim and self.anim.update(dt):
+            was_king = self.anim.piece.king
             self.game.play(self.anim.move)
+            if self.anim.piece.king and not was_king:
+                self.fx.burst(self.center_of(*self.anim.move.end), T.GOLD, n=40, speed=self.cell * 4, life=0.9)
             self.last, self.anim = self.anim.move, None
             if self.game.over:
                 self.app.show_end(self)
@@ -173,7 +189,15 @@ class MatchScreen:
         pygame.draw.circle(surf, T.MUTED, (rect.x + 24, rect.y + 26), 10, 1)
         T.text(surf, player.name, 20, T.TEXT, midleft=(rect.x + 44, rect.y + 26), bold=True)
         m, s = divmod(int(player.time), 60)
-        T.text(surf, f"Pontos: {player.score}", 16, T.MUTED, topleft=(rect.x + 16, rect.y + 48))
+        foe = (T.P_DARK, T.P_DARK_EDGE) if player.color is Color.LIGHT else (T.P_LIGHT, T.P_LIGHT_EDGE)
+        fit = max(1, (rect.w - 120) // 11)
+        for i in range(min(player.score, fit)):
+            cx = rect.x + 22 + i * 11
+            pygame.draw.circle(surf, foe[1], (cx, rect.y + 61), 6)
+            pygame.draw.circle(surf, foe[0], (cx, rect.y + 60), 5)
+        label = f"+{player.score - fit}" if player.score > fit else ("" if player.score else "0 capturas")
+        x = rect.x + 16 + min(player.score, fit) * 11 + (8 if player.score else 0)
+        T.text(surf, label, 14, T.MUTED, midleft=(x, rect.y + 61))
         T.text(surf, f"⏱ {m:02d}:{s:02d}", 18, T.TEXT, topright=(rect.right - 16, rect.y + 46))
 
     def draw(self, surf) -> None:
@@ -186,7 +210,16 @@ class MatchScreen:
                           g.turn is Color.LIGHT and not g.over)
         self._player_card(surf, pygame.Rect(w - 20 - cw, 16, cw, 80), g.players[Color.DARK],
                           g.turn is Color.DARK and not g.over)
-        T.text(surf, f"Vez de {g.current.name}", 18, T.ACCENT, center=(w // 2, 34), bold=True)
+        lbl = T.font(17, True).render(f"Vez de {g.current.name}", True, T.TEXT)
+        pill = pygame.Rect(0, 0, lbl.get_width() + 52, 34)
+        pill.center = (w // 2, 32)
+        pygame.draw.rect(surf, T.SURFACE_HI, pill, border_radius=17)
+        pygame.draw.rect(surf, T.ACCENT, pill, 1, border_radius=17)
+        glow = 7 + 2 * math.sin(pygame.time.get_ticks() / 200)
+        dot = T.P_LIGHT if g.turn is Color.LIGHT else T.P_DARK
+        pygame.draw.circle(surf, (*T.ACCENT,), (pill.x + 20, pill.centery), int(glow))
+        pygame.draw.circle(surf, dot, (pill.x + 20, pill.centery), 6)
+        surf.blit(lbl, lbl.get_rect(midleft=(pill.x + 36, pill.centery)))
         if g.rules.mandatory_capture and g.legal and g.legal[0].captured:
             T.text(surf, "Captura obrigatória!", 15, T.DANGER, center=(w // 2, 58))
         th = T.BOARD_THEMES[self.app.theme]
@@ -231,30 +264,47 @@ class MatchScreen:
                 alpha = 255
                 if self.anim and (r, c) in self.anim.move.captured and self.anim.passed((r, c)):
                     alpha = 70
-                self.draw_piece(surf, self.center_of(r, c), p, alpha)
+                cx, cy = self.center_of(r, c)
+                if (r, c) == self.selected:
+                    cy -= cs * 0.08
+                elif (r, c) == self.hover and (r, c) in movable and not self.anim and not g.over:
+                    cy -= cs * 0.04
+                self.draw_piece(surf, (cx, cy), p, alpha)
                 if hmove and (r, c) in hmove.captured:
                     pygame.draw.circle(surf, T.DANGER, self.center_of(r, c), int(cs * 0.42), 3)
                 elif not self.selected and not self.anim and not g.over and (r, c) in movable:
                     pygame.draw.circle(surf, T.ACCENT, self.center_of(r, c), int(cs * 0.42), 2)
         if self.selected:
             pulse = 2 + int(2 * (1 + math.sin(pygame.time.get_ticks() / 150)))
-            pygame.draw.circle(surf, T.GOLD, self.center_of(*self.selected), int(cs * 0.43), pulse)
+            sx, sy = self.center_of(*self.selected)
+            pygame.draw.circle(surf, T.GOLD, (sx, sy - cs * 0.08), int(cs * 0.43), pulse)
         if self.anim:
             r, c = self.anim.position()
             self.draw_piece(surf, self.center_of(r, c), self.anim.piece)
+        self.fx.draw(surf)
 
 
 class EndScreen:
     def __init__(self, app, match: MatchScreen) -> None:
         self.app, self.match = app, match
         self.buttons = [Button("Revanche", app.rematch), Button("Menu", app.show_menu, primary=False)]
+        self.t = 0.0
+        self.confetti = Particles()
 
     def handle(self, e) -> None:
         for b in self.buttons:
             b.handle(e)
 
     def update(self, dt) -> None:
-        pass
+        self.t += dt
+        self.match.fx.update(dt)
+        self.confetti.update(dt)
+        if not self.match.game.draw and self.t < 4:
+            w = pygame.display.get_surface().get_width()
+            colors = (T.GOLD, T.ACCENT, T.DANGER, (120, 220, 150), T.TEXT)
+            for _ in range(3):
+                self.confetti.burst((random.uniform(0, w), -10), random.choice(colors), n=1,
+                                    speed=120, life=2.6, size=5, gravity=260, spread=1.2, angle=math.pi / 2)
 
     def draw(self, surf) -> None:
         self.match.draw(surf)
@@ -262,12 +312,15 @@ class EndScreen:
         shade = pygame.Surface((w, h), pygame.SRCALPHA)
         shade.fill((0, 0, 0, 150))
         surf.blit(shade, (0, 0))
+        self.confetti.draw(surf)
+        k = min(1.0, self.t * 3.5)
         card = pygame.Rect(0, 0, min(420, w - 40), 290)
-        card.center = (w // 2, h // 2)
+        card.center = (w // 2, h // 2 + int(60 * (1 - k) ** 2))
         T.shadow(surf, card, 18)
         pygame.draw.rect(surf, T.SURFACE, card, border_radius=18)
         g = self.match.game
         title = "Empate!" if g.draw else f"{g.winner.name} venceu!"
+        pygame.draw.rect(surf, T.GOLD if not g.draw else T.ACCENT, card, 2, border_radius=18)
         T.text(surf, title, 34, T.GOLD, center=(card.centerx, card.y + 50), bold=True)
         pl, pd = g.players[Color.LIGHT], g.players[Color.DARK]
         T.text(surf, f"{pl.name} {pl.score}  ×  {pd.score} {pd.name}", 20, T.TEXT,

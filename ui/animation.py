@@ -1,4 +1,7 @@
 """Animação linear de movimento (interpolação segmento a segmento)."""
+import math
+import random
+import pygame
 from checkers.board import Move, Piece
 
 
@@ -24,3 +27,28 @@ class MoveAnimation:
         """Peça capturada já foi 'pulada' pela animação?"""
         idx = self.move.captured.index(square)
         return self.t >= (idx + 0.5) * self.SEGMENT_TIME
+
+
+class Particles:
+    """Sistema simples de partículas (estouro de captura, promoção, confete)."""
+
+    def __init__(self) -> None:
+        self.items: list[list] = []
+
+    def burst(self, pos, color, n=18, speed=170, life=0.6, size=5, gravity=0.0, spread=math.tau, angle=0.0):
+        for _ in range(n):
+            a = angle + random.uniform(-spread / 2, spread / 2)
+            v = random.uniform(0.35, 1.0) * speed
+            self.items.append([pos[0], pos[1], math.cos(a) * v, math.sin(a) * v, life, life, color, size, gravity])
+
+    def update(self, dt: float) -> None:
+        for p in self.items:
+            p[0] += p[2] * dt
+            p[1] += p[3] * dt
+            p[3] += p[8] * dt
+            p[4] -= dt
+        self.items = [p for p in self.items if p[4] > 0]
+
+    def draw(self, surf) -> None:
+        for x, y, _, _, life, total, color, size, _ in self.items:
+            pygame.draw.circle(surf, color, (int(x), int(y)), max(1, int(size * life / total)))

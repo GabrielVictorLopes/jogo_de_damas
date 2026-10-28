@@ -87,6 +87,10 @@ class TestRules(unittest.TestCase):
         self.assertFalse(any(m.captured for m in Rules.legal_moves(b, L, RuleSet(men_capture_backward=False))))
         b = board_with((7, 0, L, True))
         self.assertEqual(len(Rules.legal_moves(b, L, RuleSet(flying_kings=False))), 1)
+        # sem captura obrigatória pode parar no meio de uma captura múltipla
+        b = board_with((7, 0, L, False), (6, 1, D, False), (4, 3, D, False))
+        ends = {m.end for m in Rules.legal_moves(b, L, RuleSet(mandatory_capture=False))}
+        self.assertTrue({(5, 2), (3, 4)} <= ends)
 
 
 if __name__ == "__main__":
