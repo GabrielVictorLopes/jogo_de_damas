@@ -1,5 +1,7 @@
 # Damas — 2 jogadores locais
 
+Repositório: https://github.com/GabrielVictorLopes/jogo_de_damas
+
 Jogo de Damas (regras oficiais brasileiras) em Python 3.10+ com Pygame.
 
 ## Executar
