@@ -1,5 +1,6 @@
 """Paleta e tipografia."""
 import pygame
+from .transform import Transform2D
 
 BG = (17, 20, 28)
 SURFACE = (29, 33, 45)
@@ -70,8 +71,13 @@ def shadow(surf, rect, radius=14, spread=12, alpha=110) -> None:
     surf.blit(s, (rect.x - spread, rect.y - spread + 6))
 
 
-def piece(surf, center, rad, light: bool, king=False, alpha=255) -> None:
-    """Peça com sombra, relevo, sulcos e brilho; coroa dourada para dama."""
+def piece(surf, center, rad, light: bool, king=False, alpha=255, scale=1.0, crown_angle=0.0) -> None:
+    """Peça com sombra, relevo, sulcos e brilho; coroa dourada para dama.
+
+    scale e crown_angle animam a promoção: a coroa é transformada pela matriz
+    T(centro) · R(ângulo) · S(escala) aplicada aos vértices do polígono.
+    """
+    rad = max(4, int(rad * scale))
     body, edge = (P_LIGHT, P_LIGHT_EDGE) if light else (P_DARK, P_DARK_EDGE)
     c = rad + 6
     layer = pygame.Surface((c * 2, c * 2 + 4), pygame.SRCALPHA)
@@ -83,8 +89,10 @@ def piece(surf, center, rad, light: bool, king=False, alpha=255) -> None:
     pygame.draw.circle(layer, (255, 255, 255, 55 if light else 30), (c - rad * 0.3, c - rad * 0.4), rad * 0.38)
     if king:
         s, cy = rad * 0.48, c - 3
-        pts = [(c - s, cy + s * 0.55), (c - s, cy - s * 0.45), (c - s * 0.5, cy), (c, cy - s * 0.8),
-               (c + s * 0.5, cy), (c + s, cy - s * 0.45), (c + s, cy + s * 0.55)]
+        base = [(-s, s * 0.55), (-s, -s * 0.45), (-s * 0.5, 0), (0, -s * 0.8),
+                (s * 0.5, 0), (s, -s * 0.45), (s, s * 0.55)]
+        m = Transform2D.translation(c, cy) @ Transform2D.rotation(crown_angle)
+        pts = m.apply_points(base)
         pygame.draw.polygon(layer, GOLD, pts)
         pygame.draw.polygon(layer, (150, 105, 20), pts, 2)
     layer.set_alpha(alpha)

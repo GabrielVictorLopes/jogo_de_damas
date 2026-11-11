@@ -3,6 +3,7 @@ import math
 import random
 import pygame
 from checkers.board import Move, Piece
+from .transform import Vector2D
 
 
 class MoveAnimation:
@@ -21,7 +22,8 @@ class MoveAnimation:
         seg = min(int(self.t / self.SEGMENT_TIME), len(self.move.path) - 2)
         f = min(1.0, (self.t - seg * self.SEGMENT_TIME) / self.SEGMENT_TIME)
         (r1, c1), (r2, c2) = self.move.path[seg], self.move.path[seg + 1]
-        return r1 + (r2 - r1) * f, c1 + (c2 - c1) * f
+        p = Vector2D(c1, r1).lerp(Vector2D(c2, r2), f)  # P(t) = A + (B - A)·t
+        return p.y, p.x
 
     def passed(self, square) -> bool:
         """Peça capturada já foi 'pulada' pela animação?"""

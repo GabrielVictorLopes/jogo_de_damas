@@ -28,6 +28,7 @@ class Game:
         self.winner: Player | None = None
         self.draw = False
         self.quiet_king_moves = 0
+        self.paused = False
         for p in self.players.values():
             p.score, p.time = 0, 0.0
         self.legal = Rules.legal_moves(self.board, self.turn, self.rules)
@@ -43,13 +44,26 @@ class Game:
     def moves_from(self, pos: tuple[int, int]) -> list[Move]:
         return [m for m in self.legal if m.start == pos]
 
-    def tick(self, dt: float) -> None:
+    def pause(self) -> None:
         if not self.over:
+            self.paused = True
+
+    def resume(self) -> None:
+        self.paused = False
+
+    def load_board(self, board: Board, turn: Color = Color.LIGHT) -> None:
+        """Reinicia a partida a partir de uma posição pronta (ex.: demonstração)."""
+        self.reset()
+        self.board, self.turn = board, turn
+        self.legal = Rules.legal_moves(self.board, self.turn, self.rules)
+
+    def tick(self, dt: float) -> None:
+        if not self.over and not self.paused:
             self.current.time += dt
 
     def play(self, move: Move) -> bool:
-        if self.over or move not in self.legal:
-            return False  # lance inválido
+        if self.over or self.paused or move not in self.legal:
+            return False  # lance inválido, fora de hora ou jogo pausado
         was_king = self.board.get(*move.start).king
         self.board.apply(move)
         self.current.score += len(move.captured)

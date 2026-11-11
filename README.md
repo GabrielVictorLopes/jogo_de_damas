@@ -22,7 +22,7 @@ python -m unittest -v
 No menu é possível ligar/desligar: comer obrigatório, lei da maioria, pedra captura para trás e dama voadora (padrão: regras oficiais).
 
 ## Controles
-Clique na peça (contorno azul = pode mover) e depois no destino. Passe o mouse para ver destinos e peças que serão capturadas. `Menu` volta à tela inicial. Escolha o tabuleiro (Clássico, Torneio, Oceano, Mármore, Neon) no menu, ou troque durante a partida no botão `Tema` ou na tecla `T`.
+Clique na peça (contorno azul = pode mover) e depois no destino. **P** ou **Esc** pausa a partida (Continuar, Reiniciar ou Menu). **F2** carrega um final de jogo curto para demonstração: as Brancas vencem em 3 lances. Passe o mouse para ver destinos e peças que serão capturadas. `Menu` (no menu de pausa ou na tela final) volta à tela inicial. Escolha o tabuleiro (Clássico, Torneio, Oceano, Mármore, Neon) no menu, ou troque durante a partida no botão `Tema` ou na tecla `T`.
 
 ## Estrutura
 ```
@@ -30,13 +30,14 @@ main.py            ponto de entrada
 checkers/          domínio (sem dependência gráfica)
   board.py         Color, Piece, Move, Board
   rules.py         geração de lances legais
+  positions.py     posição de final de jogo para demonstração
   game.py          Player, Game (turno, pontuação, cronômetro, fim)
 ui/                apresentação (Pygame, 60 FPS)
   app.py           laço principal e troca de telas
   screens.py       MenuScreen, MatchScreen, EndScreen
   widgets.py       Button, TextInput
   animation.py     MoveAnimation (interpolação linear)
+  transform.py     Vector2D e Transform2D (matrizes 3x3: tela/mundo, rotação, escala)
   theme.py         paleta e tipografia
-tests/test_rules.py  casos de teste CT01–CT10
+tests/test_rules.py  testes automatizados CT01–CT11 e CT15–CT17
 ```
-# damas

@@ -3,6 +3,9 @@ import unittest
 from checkers.board import Board, Color, Move, Piece
 from checkers.game import Game
 from checkers.rules import Rules, RuleSet
+from checkers.positions import endgame_demo
+from ui.transform import Transform2D, Vector2D
+import math
 
 L, D = Color.LIGHT, Color.DARK
 
@@ -91,6 +94,41 @@ class TestRules(unittest.TestCase):
         b = board_with((7, 0, L, False), (6, 1, D, False), (4, 3, D, False))
         ends = {m.end for m in Rules.legal_moves(b, L, RuleSet(mandatory_capture=False))}
         self.assertTrue({(5, 2), (3, 4)} <= ends)
+
+
+    def test_ct15_pause_and_restart(self):
+        g = Game("A", "B")
+        move = g.legal[0]
+        g.pause()
+        g.tick(5.0)
+        self.assertEqual(g.players[L].time, 0.0)
+        self.assertFalse(g.play(move))  # jogada com o jogo pausado é recusada
+        g.resume()
+        self.assertTrue(g.play(move))
+        g.reset()
+        self.assertEqual((g.turn, g.board.count(D), g.players[L].score), (L, 12, 0))
+
+    def test_ct16_demo_endgame_victory(self):
+        g = Game("A", "B")
+        g.load_board(endgame_demo())
+        self.assertEqual(len(g.legal), 1)
+        self.assertTrue(g.play(g.legal[0]))  # captura dupla com promoção
+        self.assertTrue(g.board.get(0, 5).king)
+        self.assertTrue(g.play(g.legal[0]))  # Pretas avançam
+        self.assertTrue(g.play(g.legal[0]))  # Brancas capturam a última peça
+        self.assertIs(g.winner, g.players[L])
+        self.assertEqual(g.players[L].score, 3)
+
+    def test_ct17_matrix_transforms(self):
+        m = Transform2D.translation(100, 50) @ Transform2D.scaling(60)  # mundo -> tela
+        p = m.apply(Vector2D(2.5, 3.5))
+        self.assertEqual((p.x, p.y), (250.0, 260.0))
+        back = m.inverse().apply(p)
+        self.assertAlmostEqual(back.x, 2.5); self.assertAlmostEqual(back.y, 3.5)
+        r = Transform2D.rotation(math.pi / 2).apply(Vector2D(1, 0))
+        self.assertAlmostEqual(r.x, 0); self.assertAlmostEqual(r.y, 1)
+        mid = Vector2D(0, 0).lerp(Vector2D(4, 2), 0.5)
+        self.assertEqual((mid.x, mid.y), (2.0, 1.0))
 
 
 if __name__ == "__main__":

@@ -1,22 +1,41 @@
 """Telas: Menu, Partida e Fim de jogo."""
 import math
 import random
+from abc import ABC, abstractmethod
 import pygame
 from checkers.board import Color, Piece
 from checkers.game import Game
 from checkers.rules import RuleSet
+from checkers.positions import endgame_demo
+from .transform import Transform2D, Vector2D
 from .animation import MoveAnimation, Particles
 from .widgets import Button, TextInput, Toggle
 from . import theme as T
+
+
+class Screen(ABC):
+    """Base das telas (padrão State): o App delega eventos, atualização e desenho à tela atual."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    @abstractmethod
+    def handle(self, e) -> None: ...
+
+    @abstractmethod
+    def update(self, dt: float) -> None: ...
+
+    @abstractmethod
+    def draw(self, surf) -> None: ...
 
 
 DECOR = [(0.10, 0.24, True, True), (0.90, 0.30, False, False),
          (0.08, 0.76, False, True), (0.92, 0.72, True, False)]
 
 
-class MenuScreen:
+class MenuScreen(Screen):
     def __init__(self, app, names) -> None:
-        self.app = app
+        super().__init__(app)
         self.inputs = [TextInput("Jogador 1 — Brancas", names[0]),
                        TextInput("Jogador 2 — Pretas", names[1])]
         self.start = Button("Iniciar partida", self._start)
@@ -91,20 +110,41 @@ class MenuScreen:
         self.start.draw(surf)
 
 
-class MatchScreen:
+class MatchScreen(Screen):
     TOP = 110
     M = 24  # moldura com coordenadas
 
     def __init__(self, app, game: Game) -> None:
-        self.app, self.game = app, game
+        super().__init__(app)
+        self.game = game
         self.selected = None
         self.hover = None
         self.anim: MoveAnimation | None = None
         self.last = None
         self.fx = Particles()
         self.bursted: set = set()
-        self.menu_btn = Button("Menu", app.show_menu, primary=False, size=17)
+        self.promo: dict = {}  # casa -> tempo da animação de promoção
+        self.pause_btn = Button("Pausar", self.game.pause, primary=False, size=17)
         self.theme_btn = Button("Tema", self._next_theme, primary=False, size=17)
+        self.pause_buttons = [Button("Continuar", self.game.resume), Button("Reiniciar", self.restart, primary=False),
+                              Button("Menu", app.show_menu, primary=False)]
+
+    PROMO_TIME = 0.8
+
+    def _clear(self) -> None:
+        self.selected = self.anim = self.last = None
+        self.fx = Particles()
+        self.promo = {}
+
+    def restart(self) -> None:
+        """Reiniciar partida: mesmo nomes e regras, tabuleiro inicial."""
+        self.game.reset()
+        self._clear()
+
+    def load_demo(self) -> None:
+        """Carrega um final de jogo curto para a demonstração (tecla F2)."""
+        self.game.load_board(endgame_demo())
+        self._clear()
 
     def _next_theme(self) -> None:
         self.app.theme = (self.app.theme + 1) % len(T.BOARD_THEMES)
@@ -116,20 +156,34 @@ class MatchScreen:
         self.cell = size // 8
         self.ox = (w - self.cell * 8) // 2
         self.oy = self.TOP + (h - self.TOP - self.cell * 8) // 2
+        # Mundo (coluna, linha) -> tela (pixels): M = T(ox, oy) · S(cell)
+        self.to_screen = Transform2D.translation(self.ox, self.oy) @ Transform2D.scaling(self.cell)
+        self.to_world = self.to_screen.inverse()
 
     def cell_at(self, pos):
-        c, r = (pos[0] - self.ox) // self.cell, (pos[1] - self.oy) // self.cell
+        w = self.to_world.apply(Vector2D(*pos))
+        c, r = math.floor(w.x), math.floor(w.y)
         return (r, c) if 0 <= r < 8 and 0 <= c < 8 else None
 
     def center_of(self, r, c):
-        return (self.ox + c * self.cell + self.cell / 2, self.oy + r * self.cell + self.cell / 2)
+        return self.to_screen.apply(Vector2D(c + 0.5, r + 0.5)).as_tuple()
 
     # ---------- eventos ----------
     def handle(self, e) -> None:
-        self.menu_btn.handle(e)
+        if e.type == pygame.KEYDOWN and e.key in (pygame.K_p, pygame.K_ESCAPE) and not self.game.over:
+            self.game.resume() if self.game.paused else self.game.pause()
+            return
+        if self.game.paused:  # pausado: só o menu de pausa responde
+            for b in self.pause_buttons:
+                b.handle(e)
+            return
+        self.pause_btn.handle(e)
         self.theme_btn.handle(e)
         if e.type == pygame.KEYDOWN and e.key == pygame.K_t:
             self._next_theme()
+        if e.type == pygame.KEYDOWN and e.key == pygame.K_F2 and not self.anim:
+            self.load_demo()
+            return
         if self.anim or self.game.over or not hasattr(self, "cell"):
             return
         if e.type == pygame.MOUSEMOTION:
@@ -149,8 +203,11 @@ class MatchScreen:
             self.selected = cell if self.game.moves_from(cell) else None
 
     def update(self, dt) -> None:
+        if self.game.paused:  # congela cronômetro, animação e partículas
+            return
         self.game.tick(dt)
         self.fx.update(dt)
+        self.promo = {sq: t + dt for sq, t in self.promo.items() if t + dt < self.PROMO_TIME}
         if self.anim:
             for sq in self.anim.move.captured:
                 if sq not in self.bursted and self.anim.passed(sq):
@@ -163,6 +220,7 @@ class MatchScreen:
             was_king = self.anim.piece.king
             self.game.play(self.anim.move)
             if self.anim.piece.king and not was_king:
+                self.promo[self.anim.move.end] = 0.0
                 self.fx.burst(self.center_of(*self.anim.move.end), T.GOLD, n=40, speed=self.cell * 4, life=0.9)
             self.last, self.anim = self.anim.move, None
             if self.game.over:
@@ -176,8 +234,27 @@ class MatchScreen:
                     return m
         return None
 
-    def draw_piece(self, surf, center, piece: Piece, alpha=255) -> None:
-        T.piece(surf, center, int(self.cell * 0.38), piece.color is Color.LIGHT, piece.king, alpha)
+    def draw_piece(self, surf, center, piece: Piece, alpha=255, square=None) -> None:
+        scale, angle = 1.0, 0.0
+        if square in self.promo:  # promoção: escala pulsante e coroa girando uma volta
+            k = self.promo[square] / self.PROMO_TIME
+            scale, angle = 1 + 0.3 * math.sin(math.pi * k), 2 * math.pi * k
+        T.piece(surf, center, int(self.cell * 0.38), piece.color is Color.LIGHT, piece.king, alpha, scale, angle)
+
+    def _draw_pause(self, surf) -> None:
+        w, h = surf.get_size()
+        shade = pygame.Surface((w, h), pygame.SRCALPHA)
+        shade.fill((0, 0, 0, 160))
+        surf.blit(shade, (0, 0))
+        card = pygame.Rect(0, 0, min(360, w - 40), 330)
+        card.center = (w // 2, h // 2)
+        T.shadow(surf, card, 18)
+        pygame.draw.rect(surf, T.SURFACE, card, border_radius=18)
+        T.text(surf, "Jogo pausado", 30, T.TEXT, center=(card.centerx, card.y + 48), bold=True)
+        T.text(surf, "P ou Esc para continuar", 15, T.MUTED, center=(card.centerx, card.y + 82))
+        for i, b in enumerate(self.pause_buttons):
+            b.rect = pygame.Rect(card.x + 30, card.y + 110 + i * 68, card.w - 60, 52)
+            b.draw(surf)
 
     def _player_card(self, surf, rect, player, active) -> None:
         T.shadow(surf, rect, 14, 8, 70)
@@ -224,10 +301,12 @@ class MatchScreen:
             T.text(surf, "Captura obrigatória!", 15, T.DANGER, center=(w // 2, 58))
         th = T.BOARD_THEMES[self.app.theme]
         self.theme_btn.label = f"Tema: {th['name']}"
-        self.menu_btn.rect = pygame.Rect(w // 2 - 118, 70, 86, 30)
+        self.pause_btn.rect = pygame.Rect(w // 2 - 118, 70, 86, 30)
         self.theme_btn.rect = pygame.Rect(w // 2 - 24, 70, 142, 30)
-        self.menu_btn.draw(surf)
+        self.pause_btn.draw(surf)
         self.theme_btn.draw(surf)
+        T.text(surf, "P: pausar · T: tema · F2: final de jogo (demo)", 12, T.MUTED,
+               bottomleft=(8, surf.get_height() - 6))
 
         cs = self.cell
         hmove = self._hovered_move()
@@ -269,7 +348,7 @@ class MatchScreen:
                     cy -= cs * 0.08
                 elif (r, c) == self.hover and (r, c) in movable and not self.anim and not g.over:
                     cy -= cs * 0.04
-                self.draw_piece(surf, (cx, cy), p, alpha)
+                self.draw_piece(surf, (cx, cy), p, alpha, square=(r, c))
                 if hmove and (r, c) in hmove.captured:
                     pygame.draw.circle(surf, T.DANGER, self.center_of(r, c), int(cs * 0.42), 3)
                 elif not self.selected and not self.anim and not g.over and (r, c) in movable:
@@ -282,11 +361,14 @@ class MatchScreen:
             r, c = self.anim.position()
             self.draw_piece(surf, self.center_of(r, c), self.anim.piece)
         self.fx.draw(surf)
+        if self.game.paused:
+            self._draw_pause(surf)
 
 
-class EndScreen:
+class EndScreen(Screen):
     def __init__(self, app, match: MatchScreen) -> None:
-        self.app, self.match = app, match
+        super().__init__(app)
+        self.match = match
         self.buttons = [Button("Revanche", app.rematch), Button("Menu", app.show_menu, primary=False)]
         self.t = 0.0
         self.confetti = Particles()

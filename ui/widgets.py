@@ -1,12 +1,26 @@
 """Componentes reutilizáveis de interface."""
+from abc import ABC, abstractmethod
 import pygame
 from . import theme as T
 
 
-class Button:
+class Widget(ABC):
+    """Base de todos os componentes: área na tela, tratamento de evento e desenho."""
+
+    def __init__(self) -> None:
+        self.rect = pygame.Rect(0, 0, 0, 0)
+
+    @abstractmethod
+    def handle(self, e) -> None: ...
+
+    @abstractmethod
+    def draw(self, surf, *args) -> None: ...
+
+
+class Button(Widget):
     def __init__(self, label: str, on_click, primary: bool = True, size: int = 22) -> None:
         self.label, self.on_click, self.primary, self.size = label, on_click, primary, size
-        self.rect = pygame.Rect(0, 0, 0, 0)
+        super().__init__()
 
     def handle(self, e) -> None:
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.rect.collidepoint(e.pos):
@@ -22,10 +36,10 @@ class Button:
         T.text(surf, self.label, self.size, T.TEXT, center=self.rect.center, bold=True)
 
 
-class TextInput:
+class TextInput(Widget):
     def __init__(self, label: str, value: str, max_len: int = 16) -> None:
         self.label, self.value, self.max_len = label, value, max_len
-        self.rect = pygame.Rect(0, 0, 0, 0)
+        super().__init__()
         self.active = False
         self.blink = 0.0
 
@@ -47,12 +61,12 @@ class TextInput:
             pygame.draw.line(surf, T.TEXT, (r.right + 2, r.top + 3), (r.right + 2, r.bottom - 3), 2)
 
 
-class Toggle:
+class Toggle(Widget):
     """Interruptor liga/desliga com rótulo."""
 
     def __init__(self, label: str, value: bool) -> None:
         self.label, self.value, self.enabled = label, value, True
-        self.rect = pygame.Rect(0, 0, 0, 0)
+        super().__init__()
 
     def handle(self, e) -> None:
         if (self.enabled and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1
