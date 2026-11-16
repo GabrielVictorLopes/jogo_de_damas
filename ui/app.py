@@ -6,11 +6,27 @@ from .screens import MenuScreen, MatchScreen, EndScreen
 from . import theme as T
 
 
+def make_icon(size: int = 64) -> "pygame.Surface":
+    """Ícone da janela desenhado por código: peça dourada com coroa de dama."""
+    u = size / 64
+    s = pygame.Surface((size, size), pygame.SRCALPHA)
+    pygame.draw.rect(s, (20, 23, 31), (0, 0, size, size), border_radius=int(14 * u))
+    cx, cy = size // 2, int(size * 0.55)
+    pygame.draw.circle(s, (126, 92, 68), (cx, cy), int(24 * u))
+    pygame.draw.circle(s, (232, 177, 58), (cx, cy), int(22 * u))
+    pygame.draw.circle(s, (126, 92, 68), (cx, cy), int(15 * u), max(1, int(2 * u)))
+    crown = [(-16, 5), (-16, -7), (-8, -1), (0, -11), (8, -1), (16, -7), (16, 5)]
+    pygame.draw.polygon(s, (20, 23, 31), [(cx + x * u, cy + y * u) for x, y in crown])
+    pygame.draw.rect(s, (20, 23, 31), (cx - 16 * u, cy + 4 * u, 32 * u, 4 * u))
+    return s
+
+
 class App:
     FPS = 60
 
     def __init__(self) -> None:
         pygame.init()
+        pygame.display.set_icon(make_icon())  # antes de criar a janela
         pygame.display.set_caption("Damas")
         self.surface = pygame.display.set_mode((980, 780), pygame.RESIZABLE)
         self.clock = pygame.time.Clock()

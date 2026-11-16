@@ -106,10 +106,10 @@ def main() -> None:
     def status(msg):
         estado["msg"] = msg
 
-    def trabalho():
+    def trabalho(atalho):
         try:
             exe = instalar(URL, pasta_instalacao(), progresso, status)
-            if quer_atalho.get():
+            if atalho:
                 criar_atalho(exe)
             estado["fim"] = exe
         except Exception as erro:  # sem internet, release não publicado, zip inválido...
@@ -118,7 +118,8 @@ def main() -> None:
     def iniciar():
         botao.config(state="disabled")
         estado.update(msg="Conectando...", feito=0, total=0, fim=None, erro=None)
-        threading.Thread(target=trabalho, daemon=True).start()
+        # lê a caixinha aqui (thread principal): o Tk não gosta de ser lido de outra thread
+        threading.Thread(target=trabalho, args=(quer_atalho.get(),), daemon=True).start()
         atualizar()
 
     def atualizar():
@@ -131,7 +132,12 @@ def main() -> None:
             botao.config(text="Jogar", state="normal", command=lambda: (abrir(exe), janela.destroy()))
         elif estado["erro"]:
             instalado = achar_exe(pasta_instalacao())
-            rotulo.config(text="Não consegui baixar o jogo.\nConfira a internet e tente de novo.")
+            erro = estado["erro"]
+            if getattr(erro, "code", None) == 404:
+                motivo = "Versão do jogo não encontrada no GitHub\n(Release com Damas.zip não publicada ou repositório privado)."
+            else:
+                motivo = f"Não consegui baixar o jogo.\n{type(erro).__name__}: {erro}"
+            rotulo.config(text=motivo, wraplength=400)
             if instalado:
                 botao.config(text="Jogar a versão já instalada", state="normal",
                              command=lambda: (abrir(instalado), janela.destroy()))
