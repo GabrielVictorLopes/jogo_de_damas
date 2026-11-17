@@ -18,8 +18,8 @@ class Widget(ABC):
 
 
 class Button(Widget):
-    def __init__(self, label: str, on_click, primary: bool = True, size: int = 22) -> None:
-        self.label, self.on_click, self.primary, self.size = label, on_click, primary, size
+    def __init__(self, label: str, on_click, primary: bool = True, size: int = 22, danger: bool = False) -> None:
+        self.label, self.on_click, self.primary, self.size, self.danger = label, on_click, primary, size, danger
         super().__init__()
 
     def handle(self, e) -> None:
@@ -28,7 +28,7 @@ class Button(Widget):
 
     def draw(self, surf) -> None:
         hover = self.rect.collidepoint(pygame.mouse.get_pos())
-        base = T.ACCENT if self.primary else T.SURFACE_HI
+        base = T.DANGER if self.danger else (T.ACCENT if self.primary else T.SURFACE_HI)
         color = tuple(min(255, c + 25) for c in base) if hover else base
         if self.primary:
             T.shadow(surf, self.rect, 12, 8, 80)
@@ -64,8 +64,8 @@ class TextInput(Widget):
 class Toggle(Widget):
     """Interruptor liga/desliga com rótulo."""
 
-    def __init__(self, label: str, value: bool) -> None:
-        self.label, self.value, self.enabled = label, value, True
+    def __init__(self, label: str, value: bool, desc: str = "") -> None:
+        self.label, self.value, self.enabled, self.desc = label, value, True, desc
         super().__init__()
 
     def handle(self, e) -> None:
@@ -77,10 +77,34 @@ class Toggle(Widget):
         hover = self.enabled and self.rect.collidepoint(pygame.mouse.get_pos())
         pygame.draw.rect(surf, T.SURFACE_HI if hover else T.SURFACE, self.rect, border_radius=10)
         on = self.value and self.enabled
+        dy = -9 if self.desc else 0  # com descrição: título em cima, explicação embaixo
         T.text(surf, self.label, 15, T.TEXT if self.enabled else T.MUTED,
-               midleft=(self.rect.x + 10, self.rect.centery))
+               midleft=(self.rect.x + 12, self.rect.centery + dy))
+        if self.desc:
+            T.text(surf, self.desc, 12, T.MUTED, midleft=(self.rect.x + 12, self.rect.centery + 11))
         pill = pygame.Rect(0, 0, 38, 22)
         pill.midright = (self.rect.right - 10, self.rect.centery)
         pygame.draw.rect(surf, T.ACCENT if on else (70, 76, 94), pill, border_radius=11)
         knob_x = pill.right - 11 if self.value else pill.x + 11
         pygame.draw.circle(surf, T.TEXT if self.enabled else T.MUTED, (knob_x, pill.centery), 8)
+
+
+class Choice(Widget):
+    """Botão de escolha única (ex.: lado Brancas/Pretas); o dono marca `selected`."""
+
+    def __init__(self, label: str, on_click, light: bool) -> None:
+        super().__init__()
+        self.label, self.on_click, self.light = label, on_click, light
+        self.selected = False
+
+    def handle(self, e) -> None:
+        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.rect.collidepoint(e.pos):
+            self.on_click()
+
+    def draw(self, surf) -> None:
+        hover = self.rect.collidepoint(pygame.mouse.get_pos())
+        pygame.draw.rect(surf, T.SURFACE_HI if (self.selected or hover) else T.SURFACE, self.rect, border_radius=10)
+        pygame.draw.rect(surf, T.ACCENT if self.selected else T.SURFACE_HI, self.rect, 2, border_radius=10)
+        T.piece(surf, (self.rect.x + 26, self.rect.centery), 11, self.light)
+        T.text(surf, self.label, 18, T.TEXT if self.selected else T.MUTED,
+               midleft=(self.rect.x + 50, self.rect.centery), bold=self.selected)

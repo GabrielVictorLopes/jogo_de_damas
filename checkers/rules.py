@@ -14,6 +14,7 @@ class RuleSet:
     majority_rule: bool = True         # obrigatório capturar o máximo de peças
     men_capture_backward: bool = True  # pedra pode capturar para trás
     flying_kings: bool = True          # dama anda/captura várias casas
+    show_hints: bool = True            # mostra destinos possíveis e peças que serão capturadas
 
 
 class Rules:

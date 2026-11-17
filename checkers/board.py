@@ -78,6 +78,29 @@ class Board:
     def count(self, color: Color) -> int:
         return sum(1 for _ in self.pieces(color))
 
+    def to_text(self) -> str:
+        """64 caracteres (linha a linha): . vazio, l/L pedra/dama branca, d/D pedra/dama preta."""
+        out = []
+        for row in self.grid:
+            for p in row:
+                if p is None:
+                    out.append(".")
+                else:
+                    ch = "l" if p.color is Color.LIGHT else "d"
+                    out.append(ch.upper() if p.king else ch)
+        return "".join(out)
+
+    @classmethod
+    def from_text(cls, text: str) -> "Board":
+        if len(text) != cls.SIZE * cls.SIZE or set(text) - set(".lLdD"):
+            raise ValueError("tabuleiro salvo inválido")
+        b = cls(setup=False)
+        for i, ch in enumerate(text):
+            if ch != ".":
+                color = Color.LIGHT if ch.lower() == "l" else Color.DARK
+                b.grid[i // cls.SIZE][i % cls.SIZE] = Piece(color, ch.isupper())
+        return b
+
     def apply(self, move: Move) -> bool:
         """Executa o lance; retorna True se houve promoção."""
         (sr, sc), (er, ec) = move.start, move.end

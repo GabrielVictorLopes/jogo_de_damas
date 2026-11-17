@@ -1,8 +1,11 @@
-"""Casos de teste das regras (CT01–CT10)."""
+"""Casos de teste das regras, do estado de partida e do banco (CT01–CT22)."""
+import os
+import tempfile
 import unittest
 from checkers.board import Board, Color, Move, Piece
 from checkers.game import Game
 from checkers.rules import Rules, RuleSet
+from checkers.storage import GameStore, FINISHED, IN_PROGRESS, ABANDONED
 from checkers.positions import endgame_demo
 from ui.transform import Transform2D, Vector2D
 import math
@@ -129,6 +132,106 @@ class TestRules(unittest.TestCase):
         self.assertAlmostEqual(r.x, 0); self.assertAlmostEqual(r.y, 1)
         mid = Vector2D(0, 0).lerp(Vector2D(4, 2), 0.5)
         self.assertEqual((mid.x, mid.y), (2.0, 1.0))
+
+    def test_ct19_hints_rule_does_not_change_moves(self):
+        b = board_with((5, 2, L, False), (4, 3, D, False), (5, 6, L, False))
+        on = Rules.legal_moves(b, L, RuleSet(show_hints=True))
+        off = Rules.legal_moves(b, L, RuleSet(show_hints=False))
+        self.assertEqual(on, off)  # a ajuda é só visual: os lances legais continuam os mesmos
+        self.assertTrue(RuleSet().show_hints)
+
+    def test_ct20_choose_side(self):
+        g = Game("Ana", "Beto", p1_color=D)
+        self.assertEqual((g.player1.name, g.player1.color), ("Ana", D))
+        self.assertEqual((g.player2.name, g.player2.color), ("Beto", L))
+        self.assertEqual(g.turn, L)  # as Brancas sempre começam: quem escolheu Pretas joga em segundo
+        self.assertEqual(g.current.name, "Beto")
+        g.reset()
+        self.assertEqual(g.player1.color, D)
+
+    def test_ct21_save_and_resume_state(self):
+        g = Game("Ana", "Beto", RuleSet(mandatory_capture=False, show_hints=False), D)
+        g.play(g.legal[0]); g.tick(3.0)
+        g.play(g.legal[0]); g.tick(2.0)
+        r = Game.from_dict(g.to_dict())
+        self.assertEqual((r.board.to_text(), r.turn, r.move_count), (g.board.to_text(), g.turn, 2))
+        self.assertEqual((r.player1.name, r.player1.color, r.rules), ("Ana", D, g.rules))
+        self.assertAlmostEqual(r.elapsed, 5.0)
+        self.assertEqual(len(r.legal), len(g.legal))
+        with self.assertRaises(ValueError):
+            Board.from_text("x" * 64)
+
+    def test_ct22_database_history(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "sub", "damas.db")
+            db = GameStore(path)
+            g = Game("Ana", "Beto")
+            gid = db.create(g, theme=3)
+            self.assertEqual(db.latest_in_progress().id, gid)
+            g.play(g.legal[0]); g.tick(7.5)
+            db.save(gid, g, 3)
+            db.close()
+            db = GameStore(path)  # fecha e reabre: o jogo continua lá
+            rec = db.latest_in_progress()
+            self.assertEqual((rec.player1, rec.moves, rec.status), ("Ana", 1, IN_PROGRESS))
+            game, theme = db.load(gid)
+            self.assertEqual((game.turn, theme, round(game.elapsed, 1)), (D, 3, 7.5))
+            # fim de partida: vira "finalizada" com vencedor, placar e tempo
+            g.board = board_with((5, 2, L, False), (4, 3, D, False)); g.turn = L
+            g.legal = Rules.legal_moves(g.board, L, g.rules)
+            g.play(g.legal[0])
+            db.save(gid, g, 3)
+            rec = db.history()[0]
+            self.assertEqual((rec.status, rec.winner, rec.score1, rec.result_text), (FINISHED, "Ana", 1, "Ana venceu"))
+            self.assertIsNone(db.latest_in_progress())
+            gid2 = db.create(Game("C", "D"))
+            db.abandon(gid2)
+            self.assertEqual(db.history()[0].status, ABANDONED)
+            db.close()
+
+    def test_ct23_end_match_manually(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = GameStore(os.path.join(d, "damas.db"))
+            g = Game("Ana", "Beto")
+            gid = db.create(g)
+            g.play(g.legal[0]); g.tick(4.0)
+            g.end()
+            self.assertTrue(g.over)
+            self.assertFalse(g.play(g.legal[0]))  # encerrada: não aceita mais lances
+            db.save(gid, g)
+            rec = db.history()[0]
+            self.assertEqual((rec.status, rec.ended, rec.result_text, rec.moves), (FINISHED, True, "Encerrada", 1))
+            self.assertIsNone(db.latest_in_progress())  # não aparece mais para retomar
+            self.assertTrue(Game.from_dict(g.to_dict()).ended)
+            db.close()
+
+    def test_ct24_delete_records_and_migration(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = GameStore(os.path.join(d, "damas.db"))
+            ids = [db.create(Game("A", "B")) for _ in range(3)]
+            db.delete(ids[1])
+            self.assertEqual({r.id for r in db.history()}, {ids[0], ids[2]})
+            db.clear()
+            self.assertEqual(db.history(), [])
+            db.close()
+            # banco antigo (sem a coluna "ended") é atualizado sem perder os dados
+            import sqlite3
+            old = os.path.join(d, "velho.db")
+            con = sqlite3.connect(old)
+            con.execute(GameStore.SCHEMA.replace(",\n        ended       INTEGER NOT NULL DEFAULT 0", ""))
+            con.execute("INSERT INTO games (started_at, updated_at, status, player1, player2, state) VALUES (1,1,'finalizada','X','Y','{}')")
+            con.commit(); con.close()
+            db = GameStore(old)
+            self.assertTrue(db.available)
+            self.assertEqual(db.history()[0].player1, "X")
+            db.close()
+
+    def test_ct22b_database_unavailable_is_silent(self):
+        db = GameStore("/proc/nao/pode/criar/damas.db")
+        self.assertFalse(db.available)
+        self.assertIsNone(db.create(Game("A", "B")))
+        self.assertEqual(db.history(), [])
+        self.assertIsNone(db.latest_in_progress())
 
 
 if __name__ == "__main__":
